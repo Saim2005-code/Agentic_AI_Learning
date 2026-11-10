@@ -2,6 +2,10 @@ import os
 import json
 from groq import Groq
 from dotenv import load_dotenv
+from Dummy_VectorDB import vector_db
+import systemPrompt
+
+system_prompt = systemPrompt.system_prompt
 
 load_dotenv()
 
@@ -18,25 +22,6 @@ def calculate_math(expression:str) -> str:
     except Exception as e:
         return f"Math Error {e}"
 
-system_prompt = """
-You are a reasoning agent. You have access to the following tools:
-1. get_weather(city: str) - Returns the current weather for a city.
-2. calculate_math(expression: str) - Evaluates a mathematical expression.
-
-If you need to use a tool, you must output strictly a JSON object like this:
-    {
-        "thought":"I need to get the weather first, then multiply that number by 14.5.",
-        "tool": "get_weather", 
-        "input": "Kolkata"
-    }
-
-I will then provide you with the tool's result.
-
-Once you have all the information you need to answer the user's original request, output strictly a JSON object like this:
-{"final_answer": "your complete final answer here"}
-
-Do not output any markdown formatting, code blocks, or conversational text. Output ONLY the raw JSON object.
-"""
 
 def call_llm(message_history):
     response = client.chat.completions.create(
@@ -47,24 +32,26 @@ def call_llm(message_history):
 
     return response.choices[0].message.content
 
-message = [{ "role" : "system", "content":system_prompt }]
+messages = [{ "role" : "system", "content":system_prompt }]
 
 
 def run_engine(user_query:str):
-    message.append({"role": "user", "content": user_query})
+    messages.append({"role": "user", "content": user_query})
     max_iteration = 10
     for i in range(0,max_iteration):
 
         print(f"Iteration {i+1}")
-        response = call_llm(message)
+        
+        
+        response = call_llm(messages)
         print(f"The plan is: {response}")
-        message.append({ "role":"assistant","content":response })
+        messages.append({ "role":"assistant","content":response })
 
         try:
             actions = json.loads(response)
         except json.JSONDecodeError:
             print("Error: LLM returned invalid format of JSON. Forcing it to correct itself")
-            message.append({"role":"user","content":"Error: Your last output was not valid JSON. Output ONLY JSON."})
+            messages.append({"role":"user","content":"Error: Your last output was not valid JSON. Output ONLY JSON."})
             continue
 
         if "final_answer" in actions:
@@ -81,12 +68,14 @@ def run_engine(user_query:str):
                 observation = get_weather(tool_input)
             elif tool_name == "calculate_math":
                 observation = calculate_math(tool_input)
+            elif tool_name == "search_knowledge_base":
+                observation = vector_db.search_knowledge_base(tool_input)
             else:
                 observation = f"System Error : Tool {tool_name} doesn't exist"
 
 
         print(f"Observation: {observation}")
-        message.append({"role":"user","content":f"The Tool result is: {observation}"})
+        messages.append({"role":"user","content":f"The Tool result is: {observation}"})
     
 
 
